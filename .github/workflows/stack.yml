@@ -19,7 +19,6 @@ jobs:
       uses: styfle/cancel-workflow-action@0.6.0
   stack:
     env:
-      ICU: mingw-w64-x86_64-icu
       NON_DEFAULT_FLAGS: --flag Agda:enable-cluster-counting --flag Agda:cpphs --flag
         Agda:debug
       EXTRA_ARGS: --fast
@@ -30,24 +29,8 @@ jobs:
       matrix:
         include:
         - stack-ver: latest
-          ghc-ver: 9.2.1
-          os: macos-latest
-        - stack-ver: latest
           ghc-ver: 9.0.1
           os: windows-latest
-        stack-ver:
-        - latest
-        ghc-ver:
-        - 9.2.1
-        - 9.0.2
-        - 8.10.7
-        - 8.8.4
-        - 8.6.5
-        - 8.4.4
-        - 8.2.2
-        - 8.0.2
-        os:
-        - ubuntu-18.04
       fail-fast: false
     runs-on: ${{ matrix.os }}
     needs: auto-cancel
@@ -89,6 +72,23 @@ jobs:
         echo "system-ghc: true" >> ${STACK_ROOT}/config.yaml
         stack build ${ARGS} --dry-run
       name: Update and configure stack package index
+    - if: ${{ runner.os == 'Windows' }}
+      run: |
+        # $env:PATH = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$origPath;$env:PATH"
+        # stack exec ${ARGS} -- pacman --noconfirm -Syuu
+        # stack exec ${ARGS} -- pacman-key --refresh
+        stack exec ${ARGS} -- pacman --noconfirm -Sy msys2-keyring
+        stack exec ${ARGS} -- pacman --noconfirm -S mingw-w64-x86_64-icu
+      name: Install the icu library (Windows)
+    - if: ${{ runner.os == 'Linux' }}
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install libicu-dev -qq
+      name: Install the icu library (Ubuntu)
+    - if: ${{ runner.os == 'Linux' && env.GHC_VER == '8.4.4' }}
+      run: |
+        sudo apt-get install libnuma-dev -qq
+      name: Install the numa library (Ubuntu, GHC 8.4.4)
     - with:
         path: ${{ steps.haskell-setup.outputs.stack-root }}
         key: |
@@ -96,29 +96,14 @@ jobs:
       uses: actions/cache@v2
       name: Cache dependencies
       id: cache
-    - if: ${{ runner.os == 'Linux' }}
-      run: |
-        sudo apt-get update -qq
-        sudo apt-get install libicu-dev -qq
-      name: Install the icu library (Ubuntu)
-    - if: ${{ runner.os == 'Windows' }}
-      run: |
-        # stack exec ${ARGS} -- wget -q http://repo.msys2.org/mingw/x86_64/${ICU_FILE}
-        # stack exec ${ARGS} -- pacman -U --noconfirm ${ICU_FILE}
-        stack exec ${ARGS} -- pacman -S --noconfirm ${ICU}
-      name: Install the icu library (Windows)
-    - if: ${{ runner.os == 'Linux' && env.GHC_VER == '8.4.4' }}
-      run: |
-        sudo apt-get install libnuma-dev -qq
-      name: Install the numa library (Ubuntu, GHC 8.4.4)
     - if: ${{ !steps.cache.outputs.cache-hit }}
       run: stack build ${ARGS} ${EXTRA_ARGS} ${NON_DEFAULT_FLAGS} --test --only-dependencies
       name: Install dependencies for Agda and `agda-tests` (i.e. the test suite).
+    - run: stack build ${ARGS} ${EXTRA_ARGS} ${NON_DEFAULT_FLAGS}
+      name: Build Agda with the non-default flags Agda.cabal.
     - run: stack build ${ARGS} ${EXTRA_ARGS} --test --no-run-tests
       name: Build Agda with the default flags in Agda.cabal. Also build `agda-tests`
         (i.e. the test suite).
-    - run: stack build ${ARGS} ${EXTRA_ARGS} ${NON_DEFAULT_FLAGS}
-      name: Build Agda with the non-default flags Agda.cabal.
 name: Build (stack)
 'on':
   pull_request:
